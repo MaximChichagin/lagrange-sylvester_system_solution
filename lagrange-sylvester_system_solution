@@ -1,0 +1,567 @@
+#include <iostream>
+#include <fstream>
+#include <stdexcept>
+#include <cstdlib> // для функции exit
+#include <cmath> // для функций sqrt и exp
+#include <chrono>
+using namespace std;
+
+// Опишем объект "матрица"
+struct Matrix {
+    int rows;
+    int cols;
+    double** data;
+
+    // Конструктор без параметров
+    Matrix() : rows(0), cols(0), data(nullptr) {}
+
+    // Конструктор с параметрами
+    Matrix(int rows, int cols) : rows(rows), cols(cols) {
+        if (rows <= 0 || cols <= 0) {
+            throw invalid_argument("Matrix dimensions must be positive.");
+        }
+        data = new double* [rows];
+        for (int i = 0; i < rows; ++i) {
+            data[i] = new double[cols]; // Выделение памяти для каждой строки
+            for (int j = 0; j < cols; ++j) {
+                data[i][j] = 0.0;
+            }
+        }
+    }
+
+    // Конструктор копирования
+    Matrix(const Matrix& other) : rows(other.rows), cols(other.cols) {
+        data = new double* [rows];
+        for (int i = 0; i < rows; ++i) {
+            data[i] = new double[cols];
+            for (int j = 0; j < cols; ++j) {
+                data[i][j] = other.data[i][j];
+            }
+        }
+    }
+
+    // Деструктор 
+    ~Matrix() {
+        if (data != nullptr) {
+            for (int i = 0; i < rows; ++i) {
+                delete[] data[i];
+            }
+            delete[] data;
+        }
+    }
+
+    // Оператор присваивания
+    Matrix& operator=(const Matrix& other) {
+        if (this == &other) return *this; // Проверка на самоприсваивание
+
+        // Освобождаем текущие ресурсы
+        for (int i = 0; i < rows; ++i) {
+            delete[] data[i];
+        }
+        delete[] data;
+
+        // Копируем размеры
+        rows = other.rows;
+        cols = other.cols;
+
+        // Выделяем память для новых данных
+        data = new double* [rows];
+        for (int i = 0; i < rows; ++i) {
+            data[i] = new double[cols];
+            for (int j = 0; j < cols; ++j) {
+                data[i][j] = other.data[i][j];
+            }
+        }
+
+        return *this;
+    }
+
+    // Оператор сложения
+    Matrix operator+(const Matrix& other) const {
+        if (rows != other.rows || cols != other.cols) {
+            throw invalid_argument("Matrix dimensions must match for addition.");
+        }
+        Matrix result(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                result.data[i][j] = data[i][j] + other.data[i][j];
+            }
+        }
+        return result;
+    }
+
+    // // Оператор вычитания
+    Matrix operator-(const Matrix& other) const {
+        if (rows != other.rows || cols != other.cols) {
+            throw invalid_argument("Matrix dimensions must match for subtraction.");
+        }
+        Matrix result(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                result.data[i][j] = data[i][j] - other.data[i][j];
+            }
+        }
+        return result;
+    }
+
+    // Функция вывода матрицы 
+    void print_matrix() const {
+        cout << endl;
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                cout << data[i][j] << " ";
+            }
+            cout << endl;
+        }
+    }
+
+    // Функция транспонирования матрицы
+    Matrix transpose() const {
+        Matrix result(cols, rows);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                result.data[j][i] = data[i][j];
+            }
+        }
+        return result;
+    }
+
+    // Операция умножения матрицы на скаляр
+    void scalar_multiply(double scalar) {
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                data[i][j] *= scalar;
+            }
+        }
+    }
+
+    // Функция матричного произведения
+    Matrix multiply(const Matrix& other) const {
+        if (cols != other.rows) {
+            throw invalid_argument("Number of columns in the first matrix must match number of rows in the second.");
+        }
+        Matrix result(rows, other.cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < other.cols; ++j) {
+                for (int k = 0; k < cols; ++k) {
+                    result.data[i][j] += data[i][k] * other.data[k][j];
+                }
+            }
+        }
+        return result;
+    }
+
+    // Функция взятия детерминанта произвольной матрицы
+    double get_determinant() const {
+        double determinant = 0;
+
+        if (rows != cols) {
+            throw invalid_argument("Matrix must be square to find determinant.");
+        }
+
+        if (rows == 1) {
+            return data[0][0];
+        }
+
+        if (rows == 2) {
+            return data[0][0] * data[1][1] - data[0][1] * data[1][0];
+        }
+
+        for (int j_out = 0; j_out != cols; ++j_out) {
+            Matrix matrix_inside(rows - 1, cols - 1);
+            int counter = 0;
+
+            for (int i = 1; i != rows; ++i) {
+                for (int j = 0; j != cols; ++j) {
+                    if (j == j_out) continue;
+                    matrix_inside.data[i - 1][counter % (cols - 1)] = data[i][j];
+                    ++counter;
+                }
+            }
+
+            if (j_out % 2 == 0) {
+                determinant += data[0][j_out] * matrix_inside.get_determinant();
+            }
+            else {
+                determinant -= data[0][j_out] * matrix_inside.get_determinant();
+            }
+        }
+
+        return determinant;
+    }
+
+    // Функция нахождения обратной матрицы
+    Matrix inverse() const {
+        if (rows != cols) {
+            throw invalid_argument("Matrix must be square to find inverse.");
+        }
+
+        double det = get_determinant();
+        if (det == 0) {
+            throw invalid_argument("Matrix is singular, cannot find inverse.");
+        }
+
+        Matrix adjoint(rows, cols);
+
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                // Вычисляем алгебраическое дополнение
+                Matrix submatrix(rows - 1, cols - 1);
+                int sub_i = 0, sub_j = 0;
+                for (int row = 0; row < rows; ++row) {
+                    if (row == i) continue;
+                    for (int col = 0; col < cols; ++col) {
+                        if (col == j) continue;
+                        submatrix.data[sub_i][sub_j++] = data[row][col];
+                        if (sub_j == cols - 1) {
+                            sub_i++;
+                            sub_j = 0;
+                        }
+                    }
+                }
+                // Знак алгебраического дополнения
+                double sign = ((i + j) % 2 == 0) ? 1 : -1;
+                adjoint.data[j][i] = sign * submatrix.get_determinant();
+            }
+        }
+
+        // Транспонирование матрицы алгебраических дополнений и деление на определитель
+        Matrix inverse_matrix(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                inverse_matrix.data[i][j] = adjoint.data[i][j] / det;
+            }
+        }
+
+        return inverse_matrix;
+    }
+
+    // Функция удаления последней строки и последнего столбца матрицы
+    void reduce_dimension() {
+        if (rows != cols || rows <= 1) {
+            throw invalid_argument("Matrix must be square and have dimension greater than 1.");
+        }
+
+        // Создаем новый массив данных меньшего размера
+        double** newData = new double* [rows - 1];
+        for (int i = 0; i < rows - 1; ++i) {
+            newData[i] = new double[cols - 1];
+        }
+
+        // Копируем данные из старого массива в новый, исключая последнюю строку и последний столбец
+        for (int i = 0; i < rows - 1; ++i) {
+            for (int j = 0; j < cols - 1; ++j) {
+                newData[i][j] = data[i][j];
+            }
+        }
+
+        // Освобождаем память из-под старого массива
+        for (int i = 0; i < rows; ++i) {
+            delete[] data[i];
+        }
+        delete[] data;
+
+        // Обновляем размеры и данные
+        rows -= 1;
+        cols -= 1;
+        data = newData;
+    }
+
+};
+
+// Функция создания единичной матрицы
+Matrix identity(int n) {
+    Matrix identityMatrix(n, n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            identityMatrix.data[i][j] = (i == j) ? 1.0 : 0.0;
+        }
+    }
+    return identityMatrix;
+}
+
+// Функция определения знака числа
+int sign(double x) {
+    if (x >= 0) return 1;
+    return -1;
+}
+
+// Функция QR-разложения на отражениях Хаусхолдера
+void qr_householder_decomp(Matrix& A, Matrix& Q) {
+    Q = identity(A.rows);
+    double col_quad_sum = 0;
+    Matrix v(A.rows, 1);
+    Matrix H(A.cols, A.rows);
+    Matrix v_product = v.multiply(v.transpose());
+    Matrix v_scalar = v.transpose().multiply(v);
+
+    for (int i_main = 0; i_main != (A.cols - 1); ++i_main) {
+        for (int i = 0; i != A.rows; ++i) {
+            v.data[i][0] = 0;
+        }
+
+        col_quad_sum = 0;
+        for (int i = i_main; i != A.rows; ++i) {
+            col_quad_sum += A.data[i][i_main] * A.data[i][i_main];
+        }
+        v.data[i_main][0] = A.data[i_main][i_main] + sign(A.data[i_main][i_main]) * sqrt(col_quad_sum);
+
+        for (int i = (i_main + 1); i != A.rows; ++i) {
+            v.data[i][0] = A.data[i][i_main];
+        }
+
+        v_product = v.multiply(v.transpose());
+        v_scalar = v.transpose().multiply(v);
+        v_product.scalar_multiply(2 / v_scalar.data[0][0]);
+
+        H = identity(A.rows) - v_product;
+
+        Q = Q.multiply(H);
+
+        A = H.multiply(A);
+    }
+}
+
+// QR-алгоритм
+void qr_algorithm(Matrix& A, double* eigenvalues, int iterations) {
+    Matrix E(A.rows, A.cols);
+    Matrix Q = identity(A.rows);
+    int limit = A.rows;
+
+    for (int i_main = 0; i_main != limit; ++i_main) {
+        for (int i = 0; i != iterations; ++i) {
+
+            E = identity(A.rows);
+
+            E.scalar_multiply(A.data[A.rows - 1][A.cols - 1]);
+
+            A = A - E;
+
+            qr_householder_decomp(A, Q);
+
+            A = A.multiply(Q) + E;
+        }
+
+        eigenvalues[i_main] = A.data[A.rows - 1][A.cols - 1];
+        if (i_main != (limit - 1))
+            A.reduce_dimension();
+    }
+}
+
+// Функция нахождения матрциы F
+Matrix F_t(double t, Matrix& U, double* eigenvalues, int dimension) {
+    Matrix F(dimension * 2, dimension * 2);
+    for (int i = 0; i != dimension * 2; ++i) {
+        Matrix product = identity(dimension * 2);
+
+        for (int j = 0; j != dimension * 2; ++j) {
+            if (i == j)
+                continue;
+            Matrix E = identity(dimension * 2);
+            E.scalar_multiply(eigenvalues[j]);
+            product = product.multiply(U - E);
+            product.scalar_multiply(1 / (eigenvalues[i] - eigenvalues[j]));
+        }
+
+        product.scalar_multiply(exp(eigenvalues[i] * t));
+        F = F + product;
+    }
+    return F;
+}
+
+// Функция рассчета значений x(t) и p(t)
+Matrix x_t_or_p_t(Matrix& U, Matrix& x_0, double* eigenvalues, double t_k, double t, int dimension, char variant) {
+    if ((variant != 'x') && (variant != 'p')) {
+        cerr << "Your choice is wrong." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    Matrix F = F_t(t, U, eigenvalues, dimension);
+    Matrix F_k = F_t(t_k, U, eigenvalues, dimension);
+
+    Matrix F_11(dimension, dimension);
+    Matrix F_12(dimension, dimension);
+    Matrix F_21(dimension, dimension);
+    Matrix F_22(dimension, dimension);
+    Matrix F_k_21(dimension, dimension);
+    Matrix F_k_22(dimension, dimension);
+
+    for (int i = 0; i < dimension * 2; ++i) {
+        for (int j = 0; j < dimension * 2; ++j) {
+            if ((i <= 1) and (j <= 1))
+                F_11.data[i][j] = F.data[i][j];
+            if ((i <= 1) and (j > 1))
+                F_12.data[i][j % dimension] = F.data[i][j];
+            if ((i > 1) and (j <= 1)) {
+                F_21.data[i % dimension][j] = F.data[i][j];
+                F_k_21.data[i % dimension][j] = F_k.data[i][j];
+            }
+            if ((i > 1) and (j > 1)) {
+                F_22.data[i % dimension][j % dimension] = F.data[i][j];
+                F_k_22.data[i % dimension][j % dimension] = F_k.data[i][j];
+            }
+        }
+    }
+
+    Matrix X_t = F_11.multiply(x_0) - F_12.multiply((F_k_22.inverse()).multiply(F_k_21.multiply(x_0)));
+    Matrix P_t = F_21.multiply(x_0) - F_22.multiply((F_k_22.inverse()).multiply(F_k_21.multiply(x_0)));
+    if (variant == 'x')
+        return X_t;
+    return P_t;
+}
+
+// Функция чтения матрица из файла 
+void read_matrix_from_file(Matrix& matrix, ifstream& input, const string& matrix_name) {
+    for (int i = 0; i < matrix.rows; ++i) {
+        for (int j = 0; j < matrix.cols; ++j) {
+            if (!(input >> matrix.data[i][j])) {
+                cerr << "Matrix " << matrix_name << ": Element " << i << " " << j << " is wrong." << endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+}
+
+int main() {
+    // засекаем время
+    auto start = chrono::high_resolution_clock::now();
+
+    // Открытие файла input.txt и обработка ошибок 
+    ifstream input("input.txt");
+    if (!input) {
+        cerr << "Ошибка открытия файла для чтения" << endl;
+        return EXIT_FAILURE;
+    }
+
+    // Чтения размерности из файла
+    int dimension;
+    if (!(input >> dimension) or (dimension <= 0)) {
+        cerr << "Dimension is wrong." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Объявление основных объектов 
+    Matrix A(dimension, dimension);
+    Matrix B(dimension, dimension);
+    Matrix Q(dimension, dimension);
+    Matrix R(dimension, dimension);
+    Matrix x_0(dimension, 1);
+    double t_k;
+
+    // Чтение матрицы A
+    read_matrix_from_file(A, input, "A");
+
+    // Чтение матрицы B
+    read_matrix_from_file(B, input, "B");
+
+    // Чтение матрицы Q
+    read_matrix_from_file(Q, input, "Q");
+
+    // Чтение матрицы R
+    read_matrix_from_file(R, input, "R");
+
+    // Выделение памяти для вектора x_0
+    for (int i = 0; i < dimension; ++i) {
+        x_0.data[i] = new double[1];
+        if (!(input >> x_0.data[i][0])) {
+            cerr << "Vector x0: Element " << i << " is wrong." << endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Чтение конечного времени t_k
+    if (!(input >> t_k) or (t_k <= 0)) {
+        cerr << "t_k is wrong." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Закрытие файла
+    input.close();
+
+    // Рассчет матрицы S
+    Matrix S = B.multiply(R.inverse().multiply(B.transpose()));
+
+    // Построение матрицы U
+    Matrix A_transposed_negative(dimension, dimension);
+    A_transposed_negative = A.transpose();
+    A_transposed_negative.scalar_multiply(-1);
+
+    Matrix S_negative(dimension, dimension);
+    S_negative = S;
+    S_negative.scalar_multiply(-1);
+
+    Matrix Q_negative(dimension, dimension);
+    Q_negative = Q;
+    Q_negative.scalar_multiply(-1);
+
+    Matrix U(dimension * 2, dimension * 2);
+
+    for (int i = 0; i < dimension * 2; ++i) {
+        for (int j = 0; j < dimension * 2; ++j) {
+            if ((i <= 1) and (j <= 1))
+                U.data[i][j] = A.data[i][j];
+            if ((i <= 1) and (j > 1))
+                U.data[i][j] = S_negative.data[i][j % dimension];
+            if ((i > 1) and (j <= 1))
+                U.data[i][j] = Q_negative.data[i % dimension][j];
+            if ((i > 1) and (j > 1))
+                U.data[i][j] = A_transposed_negative.data[i % dimension][j % dimension];
+        }
+    }
+
+    // Нахождение собственных значений матрицы U с помощью QR-алгоритма на отражениях Хаусхолдера
+    double* eigenvalues = new double[dimension * 2];
+    Matrix U_backup = U;
+    qr_algorithm(U, eigenvalues, 10000);
+    U = U_backup;
+
+    // Открытие файла ouput.txt и обработка ошибок при этом 
+    ofstream outputfile("output.txt");
+    auto coutState = std::cout.rdstate();
+    streambuf* coutBuffer = cout.rdbuf();
+    if (!outputfile) {
+        cerr << "Error opening output file.\n";
+        exit(1);
+    }
+
+    // Запись в файл результатов: x(t), p(t), u(t) 
+    cout.rdbuf(outputfile.rdbuf());
+    cout << "x(t)\n";
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << (x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'x')).data[0][0] << ";";
+    }
+    cout << endl;
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << (x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'x')).data[1][0] << ";";
+    }
+    cout << endl;
+
+    cout << "p(t)\n";
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << (x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'p')).data[0][0] << ";";
+    }
+    cout << endl;
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << (x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'p')).data[1][0] << ";";
+    }
+    cout << endl;
+
+    cout << "u(t)\n";
+    R.scalar_multiply(-1);
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << R.inverse().multiply(B.transpose()).multiply(x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'p')).data[0][0] << ";";
+    }
+    cout << endl;
+    for (int t = 0; t != (t_k * 10 + 1); ++t) {
+        cout << R.inverse().multiply(B.transpose()).multiply(x_t_or_p_t(U, x_0, eigenvalues, t_k, double(t) / 10, dimension, 'p')).data[1][0] << ";";
+    }
+    outputfile.close();
+
+    // Засекаем конец работы программы и выводим время
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double> duration = end - start;
+    cout.rdbuf(coutBuffer);
+    cout << "Time spent: " << duration.count() << " seconds" << endl;
+
+    return 0;
+}
